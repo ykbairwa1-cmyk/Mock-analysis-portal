@@ -45,7 +45,13 @@ if page == "Upload & Analyze":
         if st.button("Extract Data & Analyze"):
             try:
                 genai.configure(api_key=API_KEY)
-                model = genai.GenerativeModel('gemini-3.8-flash')
+                for model_name in ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-3.8-flash']:
+    try:
+        model = genai.GenerativeModel(model_name)
+        break
+    except:
+        continue
+
 
 
 

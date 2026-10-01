@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import google.generativeai as genai
@@ -15,7 +14,8 @@ def init_db():
         df = pd.DataFrame(columns=["Date", "Mock_Name", "Subject", "Chapter", "MicroTopic", "Mistake_Reason", "Time_Taken_Sec", "Guess_Type", "Question_Text"])
         df.to_csv(DATA_FILE, index=False)
 
-def load_data(): return pd.read_csv(DATA_FILE)
+def load_data(): 
+    return pd.read_csv(DATA_FILE)
 
 def save_data(data_dict):
     df = pd.DataFrame([data_dict])
@@ -45,14 +45,7 @@ if page == "Upload & Analyze":
         if st.button("Extract Data & Analyze"):
             try:
                 genai.configure(api_key=API_KEY)
-                for model_name in ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-3.8-flash']:
-    try:
-      model = genai.GenerativeModel('gemini-1.5-flash')
-
-
-
-
-
+                model = genai.GenerativeModel('gemini-1.5-flash')
                 img = Image.open(uploaded_file)
                 prompt = 'Extract details from this exam question image. Return ONLY JSON format.\n{"QuestionText": "text", "Subject": "subject", "Chapter": "chapter", "MicroTopic": "topic"}'
                 with st.spinner("AI is analyzing the question..."):
@@ -60,22 +53,38 @@ if page == "Upload & Analyze":
                     data = json.loads(response.text)
                 st.success("Analysis Complete!")
                 st.json(data)
-                save_data({"Date": datetime.now().strftime("%Y-%m-%d"), "Mock_Name": mock_name, "Subject": data.get("Subject", "Unknown"), "Chapter": data.get("Chapter", "Unknown"), "MicroTopic": data.get("MicroTopic", "Unknown"), "Mistake_Reason": mistake_reason, "Time_Taken_Sec": time_taken, "Guess_Type": guess_type, "Question_Text": data.get("QuestionText", "")})
+                save_data({
+                    "Date": datetime.now().strftime("%Y-%m-%d"), 
+                    "Mock_Name": mock_name, 
+                    "Subject": data.get("Subject", "Unknown"), 
+                    "Chapter": data.get("Chapter", "Unknown"), 
+                    "MicroTopic": data.get("MicroTopic", "Unknown"), 
+                    "Mistake_Reason": mistake_reason, 
+                    "Time_Taken_Sec": time_taken, 
+                    "Guess_Type": guess_type, 
+                    "Question_Text": data.get("QuestionText", "")
+                })
                 st.info("Data saved to database!")
-            except Exception as e: st.error(f"Error: {e}")
-    elif not API_KEY: st.warning("Please enter your Gemini API Key in the sidebar.")
+            except Exception as e: 
+                st.error(f"Error: {e}")
+    elif not API_KEY: 
+        st.warning("Please enter your Gemini API Key in the sidebar.")
 
 elif page == "Dashboard & Priority":
     st.title("Performance Dashboard")
     df = load_data()
     if not df.empty:
         c1, c2 = st.columns(2)
-        with c1: st.bar_chart(df['Mistake_Reason'].value_counts())
-        with c2: st.bar_chart(df['Subject'].value_counts())
+        with c1: 
+            st.bar_chart(df['Mistake_Reason'].value_counts())
+        with c2: 
+            st.bar_chart(df['Subject'].value_counts())
         st.subheader("🚨 THE RED ZONE (Priority Chapters)")
         for chapter, count in df['Chapter'].value_counts().items():
-            if count >= 2: st.error(f"**{chapter}** - {count} mistakes. Revise Immediately!")
-            else: st.warning(f"**{chapter}** - {count} mistake.")
+            if count >= 2: 
+                st.error(f"**{chapter}** - {count} mistakes. Revise Immediately!")
+            else: 
+                st.warning(f"**{chapter}** - {count} mistake.")
 
 elif page == "Export PDF Workbook":
     st.title("Generate PDF for iPad")

@@ -45,7 +45,8 @@ if page == "Upload & Analyze":
         if st.button("Extract Data & Analyze"):
             try:
                 genai.configure(api_key=API_KEY)
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                model = genai.GenerativeModel('gemini-3.8-flash')
+
                 img = Image.open(uploaded_file)
                 prompt = 'Extract details from this exam question image. Return ONLY JSON format.\n{"QuestionText": "text", "Subject": "subject", "Chapter": "chapter", "MicroTopic": "topic"}'
                 with st.spinner("AI is analyzing the question..."):

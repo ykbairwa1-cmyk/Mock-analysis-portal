@@ -47,10 +47,8 @@ if page == "Upload & Analyze":
                 genai.configure(api_key=API_KEY)
                 for model_name in ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-3.8-flash']:
     try:
-        model = genai.GenerativeModel(model_name)
-        break
-    except:
-        continue
+      model = genai.GenerativeModel('gemini-1.5-flash')
+
 
 
 

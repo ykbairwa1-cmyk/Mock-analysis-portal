@@ -14,17 +14,31 @@ if not os.path.exists(IMAGE_DIR):
     os.makedirs(IMAGE_DIR)
 
 def init_db():
-    if not os.path.exists(DATA_FILE):
-        df = pd.DataFrame(columns=[
-            "Date", "Mock_Name", "Subject", "Chapter", "Micro_Topic", 
-            "Mistake_Reason", "Time_Taken_Sec", "Image_Path", "Next_Revision_Date"
-        ])
-        df.to_csv(DATA_FILE, index=False)
+    df = pd.DataFrame(columns=[
+        "Date", "Mock_Name", "Subject", "Chapter", "Micro_Topic", 
+        "Mistake_Reason", "Time_Taken_Sec", "Image_Path", "Next_Revision_Date"
+    ])
+    df.to_csv(DATA_FILE, index=False)
 
 def load_data():
     if os.path.exists(DATA_FILE):
+        try:
+            df = pd.read_csv(DATA_FILE)
+            # Agar purani file hui jisme naye columns nahi hain, toh usko handle karega
+            if "Micro_Topic" not in df.columns:
+                raise ValueError("Old CSV Schema Detected")
+            return df
+        except Exception as e:
+            # Error aane par purani file ka naam badal kar nayi fresh file banayega (Crash Fix)
+            try:
+                os.rename(DATA_FILE, f"backup_corrupted_{uuid.uuid4().hex[:5]}.csv")
+            except:
+                os.remove(DATA_FILE)
+            init_db()
+            return pd.read_csv(DATA_FILE)
+    else:
+        init_db()
         return pd.read_csv(DATA_FILE)
-    return pd.DataFrame()
 
 def save_data(data_dict):
     df = pd.DataFrame([data_dict])
@@ -35,12 +49,25 @@ def delete_record(index_to_drop):
     if index_to_drop in df.index:
         img_path = df.loc[index_to_drop, "Image_Path"]
         if pd.notna(img_path) and os.path.exists(img_path):
-            os.remove(img_path) # Delete actual image file to save space
+            try:
+                os.remove(img_path) # Storage bachane ke liye image delete karega
+            except:
+                pass
         df = df.drop(index_to_drop)
         df.to_csv(DATA_FILE, index=False)
         st.rerun()
 
-init_db()
+# --- Smart Revision Calculator ---
+def calculate_revision_date(reason):
+    today = datetime.now()
+    if reason in ["Conceptual Gap", "Clueless"]:
+        return (today + timedelta(days=2)).strftime("%Y-%m-%d")
+    elif reason == "Memory/Fact Based":
+        return (today + timedelta(days=1)).strftime("%Y-%m-%d")
+    elif reason in ["Time Pressure", "Overtime"]:
+        return (today + timedelta(days=5)).strftime("%Y-%m-%d") 
+    else:
+        return (today + timedelta(days=7)).strftime("%Y-%m-%d")
 
 # --- Page Config & Navigation ---
 st.set_page_config(page_title="Mock Pro Tracker", layout="wide", initial_sidebar_state="expanded")
@@ -51,18 +78,6 @@ main_menu = st.sidebar.radio("Navigation:", ["📤 Upload Questions", "📂 Mana
 df_global = load_data()
 existing_mocks = df_global['Mock_Name'].unique().tolist() if not df_global.empty else []
 reasons_list = ["Silly Mistake", "Conceptual Gap", "Memory/Fact Based", "Time Pressure", "Skipped", "Overtime", "Clueless"]
-
-# --- Smart Revision Calculator ---
-def calculate_revision_date(reason):
-    today = datetime.now()
-    if reason in ["Conceptual Gap", "Clueless"]:
-        return (today + timedelta(days=2)).strftime("%Y-%m-%d") # Needs quick revision
-    elif reason == "Memory/Fact Based":
-        return (today + timedelta(days=1)).strftime("%Y-%m-%d") # Needs immediate memorization
-    elif reason in ["Time Pressure", "Overtime"]:
-        return (today + timedelta(days=5)).strftime("%Y-%m-%d") 
-    else:
-        return (today + timedelta(days=7)).strftime("%Y-%m-%d") # Silly mistakes/Skipped
 
 # --- 1. Upload Question Images ---
 if main_menu == "📤 Upload Questions":
@@ -109,7 +124,6 @@ if main_menu == "📤 Upload Questions":
                     for idx, data in enumerate(metadata):
                         filename = f"{uuid.uuid4().hex}.jpg"
                         img_path = os.path.join(IMAGE_DIR, filename)
-                        # Compress and save
                         data["img"].thumbnail((1200, 1200))
                         data["img"].save(img_path, "JPEG", quality=85)
                         
@@ -165,7 +179,6 @@ elif main_menu == "📊 Analysis Dashboard":
     if df.empty:
         st.info("Log some questions to see analytics.")
     else:
-        # Crash-Proof Chart Formatting
         c1, c2 = st.columns(2)
         
         with c1:
@@ -229,18 +242,15 @@ elif main_menu == "📥 Export PDF Workbook":
                     pdf.cell(0, 8, f"Reason: {row['Mistake_Reason']} | Time: {row['Time_Taken_Sec']}s", ln=True)
                     pdf.ln(5)
                     
-                    # Safe Image Insertion logic (avoids blank pages)
                     img_path = row['Image_Path']
                     if pd.notna(img_path) and os.path.exists(img_path):
                         try:
-                            # Width 170 ensures it fits on A4 without pushing to a blank page
                             pdf.image(img_path, w=170) 
                         except Exception as e:
                             pdf.cell(0, 10, f"[Image Render Error: {str(e)}]", ln=True)
                     else:
                         pdf.cell(0, 10, "[Image Missing from Storage]", ln=True)
                         
-                    # Calculate progress safely using iloc mapping logic
                     current_idx = export_df.index.get_loc(index)
                     progress.progress((current_idx + 1) / len(export_df))
                     

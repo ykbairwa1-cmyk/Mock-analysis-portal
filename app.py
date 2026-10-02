@@ -11,11 +11,12 @@ from fpdf import FPDF
 DATA_FILE = "mock_data_images.csv"
 IMAGE_DIR = "saved_images"
 EXAMS_FILE = "exams_settings.json"
+CHAPTERS_FILE = "chapters_settings.json"
 
 if not os.path.exists(IMAGE_DIR):
     os.makedirs(IMAGE_DIR)
 
-# --- Exam Settings Manager ---
+# --- Settings Managers ---
 def load_exams():
     if os.path.exists(EXAMS_FILE):
         with open(EXAMS_FILE, 'r') as f:
@@ -33,6 +34,20 @@ def save_exams(exams_dict):
     with open(EXAMS_FILE, 'w') as f:
         json.dump(exams_dict, f)
 
+def load_chapters():
+    if os.path.exists(CHAPTERS_FILE):
+        with open(CHAPTERS_FILE, 'r') as f:
+            return json.load(f)
+    else:
+        default_chapters = ["Polity", "Time & Work", "History", "Number System", "Percentage"]
+        with open(CHAPTERS_FILE, 'w') as f:
+            json.dump(default_chapters, f)
+        return default_chapters
+
+def save_chapters(chapters_list):
+    with open(CHAPTERS_FILE, 'w') as f:
+        json.dump(chapters_list, f)
+
 # --- Database Manager ---
 def init_db():
     df = pd.DataFrame(columns=[
@@ -49,10 +64,8 @@ def load_data():
                 raise ValueError("Old CSV Schema")
             return df
         except Exception:
-            try:
-                os.rename(DATA_FILE, f"backup_corrupted_{uuid.uuid4().hex[:5]}.csv")
-            except:
-                os.remove(DATA_FILE)
+            try: os.rename(DATA_FILE, f"backup_corrupted_{uuid.uuid4().hex[:5]}.csv")
+            except: os.remove(DATA_FILE)
             init_db()
             return pd.read_csv(DATA_FILE)
     else:
@@ -62,6 +75,12 @@ def load_data():
 def save_data(data_dict):
     df = pd.DataFrame([data_dict])
     df.to_csv(DATA_FILE, mode='a', header=not os.path.exists(DATA_FILE), index=False)
+
+def update_csv_values(column_name, old_val, new_val):
+    df = load_data()
+    if not df.empty and old_val in df[column_name].values:
+        df.loc[df[column_name] == old_val, column_name] = new_val
+        df.to_csv(DATA_FILE, index=False)
 
 def delete_record(index_to_drop):
     df = load_data()
@@ -74,17 +93,12 @@ def delete_record(index_to_drop):
         df.to_csv(DATA_FILE, index=False)
         st.rerun()
 
-# --- Smart Revision Calculator ---
 def calculate_revision_date(reason):
     today = datetime.now()
-    if reason in ["Conceptual Gap", "Clueless"]:
-        return (today + timedelta(days=2)).strftime("%Y-%m-%d") # Concept weak hai, jaldi revise karo
-    elif reason == "Memory/Fact Based":
-        return (today + timedelta(days=1)).strftime("%Y-%m-%d") # Fact bhool gaye, kal hi revise karo
-    elif reason in ["Time Pressure", "Overtime"]:
-        return (today + timedelta(days=5)).strftime("%Y-%m-%d") 
-    else:
-        return (today + timedelta(days=7)).strftime("%Y-%m-%d") # Silly Mistake, hafte me ek baar
+    if reason in ["Conceptual Gap", "Clueless"]: return (today + timedelta(days=2)).strftime("%Y-%m-%d")
+    elif reason == "Memory/Fact Based": return (today + timedelta(days=1)).strftime("%Y-%m-%d")
+    elif reason in ["Time Pressure", "Overtime"]: return (today + timedelta(days=5)).strftime("%Y-%m-%d") 
+    else: return (today + timedelta(days=7)).strftime("%Y-%m-%d")
 
 # --- Page Config & Navigation ---
 st.set_page_config(page_title="Mock Pro Tracker", layout="wide", initial_sidebar_state="expanded")
@@ -95,11 +109,12 @@ main_menu = st.sidebar.radio("Navigation:", [
     "📂 Manage & Delete", 
     "📊 Smart Analysis & Revision", 
     "📥 Export PDF Workbook",
-    "⚙️ Exam & Subject Settings"
+    "⚙️ Settings & Customization"
 ])
 
 df_global = load_data()
 exams_dict = load_exams()
+saved_chapters = load_chapters()
 reasons_list = ["Silly Mistake", "Conceptual Gap", "Memory/Fact Based", "Time Pressure", "Skipped", "Overtime", "Clueless"]
 
 # --- 1. Upload Question Images ---
@@ -133,7 +148,14 @@ if main_menu == "📤 Upload Questions":
                         st.image(img, use_container_width=True)
                     with c2:
                         subj = st.selectbox("Subject", available_subjects, key=f"sub_{i}")
-                        chap = st.text_input("Chapter", "Type Chapter Name", key=f"chap_{i}")
+                        
+                        # Smart Chapter Input System
+                        chap_choice = st.selectbox("Chapter", ["-- Add New Chapter --"] + saved_chapters, key=f"chap_choice_{i}")
+                        if chap_choice == "-- Add New Chapter --":
+                            chap = st.text_input("Type New Chapter Name", key=f"chap_new_{i}")
+                        else:
+                            chap = chap_choice
+                            
                         micro = st.text_input("Micro Topic", "General", key=f"mic_{i}")
                     with c3:
                         reason = st.selectbox("Reason", reasons_list, key=f"res_{i}")
@@ -146,7 +168,13 @@ if main_menu == "📤 Upload Questions":
                     if not mock_name:
                         st.error("Mock Test Name is required!")
                     else:
+                        new_chapters_added = False
                         for data in metadata:
+                            # Save new chapters automatically
+                            if data["chap"] and data["chap"] not in saved_chapters:
+                                saved_chapters.append(data["chap"].strip())
+                                new_chapters_added = True
+                                
                             filename = f"{uuid.uuid4().hex}.jpg"
                             img_path = os.path.join(IMAGE_DIR, filename)
                             data["img"].thumbnail((1200, 1200))
@@ -157,14 +185,18 @@ if main_menu == "📤 Upload Questions":
                                 "Exam_Category": selected_exam,
                                 "Mock_Name": mock_name,
                                 "Subject": data["subj"],
-                                "Chapter": data["chap"],
+                                "Chapter": data["chap"].strip(),
                                 "Micro_Topic": data["micro"],
                                 "Mistake_Reason": data["reason"],
                                 "Time_Taken_Sec": data["time"],
                                 "Image_Path": img_path,
                                 "Next_Revision_Date": calculate_revision_date(data["reason"])
                             })
-                        st.success("✅ Logged successfully!")
+                            
+                        if new_chapters_added:
+                            save_chapters(saved_chapters)
+                            
+                        st.success("✅ Logged successfully! Chapters are updated in memory.")
 
 # --- 2. Manage & Delete Sections ---
 elif main_menu == "📂 Manage & Delete":
@@ -200,7 +232,7 @@ elif main_menu == "📂 Manage & Delete":
                     if st.button("🗑️ Delete", key=f"del_{idx}"): delete_record(idx)
                 st.divider()
 
-# --- 3. Smart Analysis & Revision (THE INNOVATION) ---
+# --- 3. Smart Analysis & Revision ---
 elif main_menu == "📊 Smart Analysis & Revision":
     st.title("Performance & Priority Engine")
     df = load_data()
@@ -210,7 +242,6 @@ elif main_menu == "📊 Smart Analysis & Revision":
     else:
         today_str = datetime.now().strftime("%Y-%m-%d")
         
-        # --- SECTION A: TODAY'S REVISION TARGETS ---
         st.subheader("📅 Today's Actionable Revision")
         revision_df = df[df['Next_Revision_Date'] <= today_str]
         
@@ -218,57 +249,31 @@ elif main_menu == "📊 Smart Analysis & Revision":
             st.success("🎉 All caught up! No pending revisions for today.")
         else:
             st.warning(f"You have {len(revision_df)} question(s) pending for revision today!")
-            # Displaying revision targets in a clean table
             rev_display = revision_df[['Subject', 'Chapter', 'Micro_Topic', 'Mistake_Reason', 'Mock_Name', 'Next_Revision_Date']].copy()
             st.dataframe(rev_display, use_container_width=True)
 
         st.divider()
 
-        # --- SECTION B: WEAKNESS PRIORITY RANKER ---
         st.subheader("🔥 Weakest Topics (Priority Set)")
-        
-        # Priority Algorithm: Calculate mistakes per micro-topic and weigh specific reasons heavier
         priority_data = []
         grouped = df.groupby(['Subject', 'Chapter', 'Micro_Topic'])
         
         for name, group in grouped:
             total_mistakes = len(group)
-            silly_mistakes = len(group[group['Mistake_Reason'] == 'Silly Mistake'])
-            conceptual_gaps = len(group[group['Mistake_Reason'].isin(['Conceptual Gap', 'Clueless'])])
+            silly = len(group[group['Mistake_Reason'] == 'Silly Mistake'])
+            concept = len(group[group['Mistake_Reason'].isin(['Conceptual Gap', 'Clueless'])])
             
-            # Determine Priority Level
-            if conceptual_gaps >= 2 or total_mistakes >= 4:
-                priority = "🔴 HIGH (Must Revise Concepts)"
-            elif silly_mistakes >= 3 or total_mistakes >= 2:
-                priority = "🟡 MEDIUM (Practice Needed)"
-            else:
-                priority = "🟢 LOW (Occasional Error)"
+            if concept >= 2 or total_mistakes >= 4: priority = "🔴 HIGH (Must Revise Concepts)"
+            elif silly >= 3 or total_mistakes >= 2: priority = "🟡 MEDIUM (Practice Needed)"
+            else: priority = "🟢 LOW (Occasional Error)"
                 
             priority_data.append({
-                "Subject": name[0],
-                "Chapter": name[1],
-                "Micro Topic": name[2],
-                "Total Mistakes": total_mistakes,
-                "Concept Gaps": conceptual_gaps,
-                "Silly Errors": silly_mistakes,
-                "Priority Level": priority
+                "Subject": name[0], "Chapter": name[1], "Micro Topic": name[2],
+                "Total Mistakes": total_mistakes, "Concept Gaps": concept, "Priority Level": priority
             })
             
         priority_df = pd.DataFrame(priority_data).sort_values(by=["Concept Gaps", "Total Mistakes"], ascending=False)
         st.dataframe(priority_df, use_container_width=True)
-        
-        st.divider()
-
-        # --- SECTION C: BASIC METRICS ---
-        st.subheader("General Trends")
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**Errors by Category**")
-            st.bar_chart(df['Mistake_Reason'].value_counts())
-        with c2:
-            st.markdown("**Most Time-Consuming Chapters (Secs)**")
-            time_df = df.groupby('Chapter')['Time_Taken_Sec'].sum().sort_values(ascending=False).head(5)
-            st.bar_chart(time_df)
 
 # --- 4. Export PDF ---
 elif main_menu == "📥 Export PDF Workbook":
@@ -306,7 +311,7 @@ elif main_menu == "📥 Export PDF Workbook":
                     pdf.cell(0, 8, f"Exam: {row['Exam_Category']} | Mock: {row['Mock_Name']}", ln=True)
                     
                     pdf.set_font("Arial", 'B', 12)
-                    pdf.cell(0, 8, f"Topic: {row['Chapter']} ({row['Micro_Topic']})", ln=True)
+                    pdf.cell(0, 8, f"Subject: {row['Subject']} | Chapter: {row['Chapter']} ({row['Micro_Topic']})", ln=True)
                     
                     pdf.set_font("Arial", 'I', 11)
                     pdf.cell(0, 8, f"Reason: {row['Mistake_Reason']} | Time: {row['Time_Taken_Sec']}s", ln=True)
@@ -329,32 +334,88 @@ elif main_menu == "📥 Export PDF Workbook":
                 with open(pdf_file, "rb") as f:
                     st.download_button("📥 Click Here to Download PDF", f, file_name="Revision_Workbook.pdf", mime="application/pdf")
 
-# --- 5. Settings ---
-elif main_menu == "⚙️ Exam & Subject Settings":
-    st.title("Setup Exams & Subjects")
+# --- 5. Settings & Customization ---
+elif main_menu == "⚙️ Settings & Customization":
+    st.title("Settings & App Customization")
     
-    st.subheader("1. Add New Exam Category")
-    new_exam = st.text_input("New Exam Name (e.g. SSC CGL):")
-    new_exam_subs = st.text_input("Enter Subjects (Comma separated, e.g. Math, English, GK):")
-    if st.button("Add Exam"):
-        if new_exam and new_exam_subs:
-            subs_list = [s.strip() for s in new_exam_subs.split(",")]
-            exams_dict[new_exam] = subs_list
+    st.header("1. Exam & Subject Management")
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.subheader("Add New Exam/Subject")
+        new_exam = st.text_input("New Exam Name (e.g. SSC CGL):")
+        new_exam_subs = st.text_input("Enter Subjects (Comma separated):")
+        if st.button("Add Exam"):
+            if new_exam and new_exam_subs:
+                subs_list = [s.strip() for s in new_exam_subs.split(",")]
+                exams_dict[new_exam] = subs_list
+                save_exams(exams_dict)
+                st.success(f"Added {new_exam}!")
+                st.rerun()
+                
+        st.divider()
+        edit_exam = st.selectbox("Select Exam to modify:", list(exams_dict.keys()), key="add_sub_ex")
+        add_sub = st.text_input("Add a New Subject to this Exam:")
+        if st.button("Add Subject"):
+            if add_sub and add_sub not in exams_dict[edit_exam]:
+                exams_dict[edit_exam].append(add_sub.strip())
+                save_exams(exams_dict)
+                st.success(f"Added '{add_sub}'!")
+                st.rerun()
+
+    with c2:
+        st.subheader("Edit / Delete Subjects")
+        edit_exam_del = st.selectbox("Select Exam:", list(exams_dict.keys()), key="del_sub_ex")
+        subject_to_edit = st.selectbox("Select Subject:", exams_dict[edit_exam_del])
+        
+        new_sub_name = st.text_input("Rename Subject To:", value=subject_to_edit)
+        if st.button("Rename Subject"):
+            if new_sub_name != subject_to_edit:
+                # Update in dictionary
+                idx = exams_dict[edit_exam_del].index(subject_to_edit)
+                exams_dict[edit_exam_del][idx] = new_sub_name.strip()
+                save_exams(exams_dict)
+                # Update in old records
+                update_csv_values("Subject", subject_to_edit, new_sub_name.strip())
+                st.success("Renamed successfully!")
+                st.rerun()
+                
+        if st.button("🗑️ Delete Subject", type="primary"):
+            exams_dict[edit_exam_del].remove(subject_to_edit)
             save_exams(exams_dict)
-            st.success(f"Added {new_exam}!")
+            st.warning("Subject Deleted (Old records are kept safe in database).")
+            st.rerun()
+            
+        st.divider()
+        if st.button("🚨 Delete Entire Exam Category", type="primary"):
+            del exams_dict[edit_exam_del]
+            save_exams(exams_dict)
             st.rerun()
             
     st.divider()
     
-    st.subheader("2. Add Subjects to Existing Exam")
-    edit_exam = st.selectbox("Select Exam to modify:", list(exams_dict.keys()))
-    current_subs = exams_dict[edit_exam]
-    st.write(f"**Current Subjects:** {', '.join(current_subs)}")
+    st.header("2. Chapter List Management")
+    st.write("Manage the chapters that automatically appear in the drop-down.")
     
-    add_sub = st.text_input("Add a New Subject to this Exam:")
-    if st.button("Add Subject"):
-        if add_sub and add_sub not in current_subs:
-            exams_dict[edit_exam].append(add_sub.strip())
-            save_exams(exams_dict)
-            st.success(f"Added '{add_sub}' to {edit_exam}!")
-            st.rerun()
+    col3, col4 = st.columns(2)
+    with col3:
+        chap_to_edit = st.selectbox("Select Chapter:", saved_chapters)
+    with col4:
+        new_chap_name = st.text_input("Rename Chapter To:", value=chap_to_edit)
+        
+        c_btn1, c_btn2 = st.columns(2)
+        with c_btn1:
+            if st.button("Rename Chapter"):
+                if new_chap_name != chap_to_edit:
+                    idx = saved_chapters.index(chap_to_edit)
+                    saved_chapters[idx] = new_chap_name.strip()
+                    save_chapters(saved_chapters)
+                    update_csv_values("Chapter", chap_to_edit, new_chap_name.strip())
+                    st.success("Chapter Renamed!")
+                    st.rerun()
+        with c_btn2:
+            if st.button("🗑️ Delete Chapter", type="primary"):
+                saved_chapters.remove(chap_to_edit)
+                save_chapters(saved_chapters)
+                st.warning("Chapter removed from Dropdown.")
+                st.rerun()

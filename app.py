@@ -37,16 +37,23 @@ def save_exams(exams_dict):
 def load_chapters():
     if os.path.exists(CHAPTERS_FILE):
         with open(CHAPTERS_FILE, 'r') as f:
-            return json.load(f)
+            data = json.load(f)
+            # Smart Migration: Agar purani file list format me hai, toh usko Dictionary me convert karega
+            if isinstance(data, list):
+                return {"General": data}
+            return data
     else:
-        default_chapters = ["Polity", "Time & Work", "History", "Number System", "Percentage"]
+        default_chapters = {
+            "Polity": ["Fundamental Rights", "Parliament", "Executive"],
+            "Mathematics": ["Time & Work", "Number System", "Percentage"]
+        }
         with open(CHAPTERS_FILE, 'w') as f:
             json.dump(default_chapters, f)
         return default_chapters
 
-def save_chapters(chapters_list):
+def save_chapters(chapters_dict):
     with open(CHAPTERS_FILE, 'w') as f:
-        json.dump(chapters_list, f)
+        json.dump(chapters_dict, f)
 
 # --- Database Manager ---
 def init_db():
@@ -109,7 +116,7 @@ main_menu = st.sidebar.radio("Navigation:", [
     "📂 Manage & Delete", 
     "📊 Smart Analysis & Revision", 
     "📥 Export PDF Workbook",
-    "⚙️ Settings & Customization"
+    "⚙️ Settings & Bulk Upload"
 ])
 
 df_global = load_data()
@@ -149,8 +156,10 @@ if main_menu == "📤 Upload Questions":
                     with c2:
                         subj = st.selectbox("Subject", available_subjects, key=f"sub_{i}")
                         
-                        # Smart Chapter Input System
-                        chap_choice = st.selectbox("Chapter", ["-- Add New Chapter --"] + saved_chapters, key=f"chap_choice_{i}")
+                        # Subject-wise Chapter logic
+                        subject_chapters = saved_chapters.get(subj, [])
+                        chap_choice = st.selectbox("Chapter", ["-- Add New Chapter --"] + subject_chapters, key=f"chap_choice_{i}")
+                        
                         if chap_choice == "-- Add New Chapter --":
                             chap = st.text_input("Type New Chapter Name", key=f"chap_new_{i}")
                         else:
@@ -170,10 +179,14 @@ if main_menu == "📤 Upload Questions":
                     else:
                         new_chapters_added = False
                         for data in metadata:
-                            # Save new chapters automatically
-                            if data["chap"] and data["chap"] not in saved_chapters:
-                                saved_chapters.append(data["chap"].strip())
-                                new_chapters_added = True
+                            # Save new chapters subject-wise automatically
+                            if data["chap"]:
+                                current_sub = data["subj"]
+                                if current_sub not in saved_chapters:
+                                    saved_chapters[current_sub] = []
+                                if data["chap"].strip() not in saved_chapters[current_sub]:
+                                    saved_chapters[current_sub].append(data["chap"].strip())
+                                    new_chapters_added = True
                                 
                             filename = f"{uuid.uuid4().hex}.jpg"
                             img_path = os.path.join(IMAGE_DIR, filename)
@@ -196,7 +209,7 @@ if main_menu == "📤 Upload Questions":
                         if new_chapters_added:
                             save_chapters(saved_chapters)
                             
-                        st.success("✅ Logged successfully! Chapters are updated in memory.")
+                        st.success("✅ Logged successfully! Chapters linked to subjects automatically.")
 
 # --- 2. Manage & Delete Sections ---
 elif main_menu == "📂 Manage & Delete":
@@ -335,14 +348,15 @@ elif main_menu == "📥 Export PDF Workbook":
                     st.download_button("📥 Click Here to Download PDF", f, file_name="Revision_Workbook.pdf", mime="application/pdf")
 
 # --- 5. Settings & Customization ---
-elif main_menu == "⚙️ Settings & Customization":
+elif main_menu == "⚙️ Settings & Bulk Upload":
     st.title("Settings & App Customization")
     
+    # ------------------ EXAM & SUBJECTS ------------------
     st.header("1. Exam & Subject Management")
     c1, c2 = st.columns(2)
     
     with c1:
-        st.subheader("Add New Exam/Subject")
+        st.subheader("Add New Exam Category")
         new_exam = st.text_input("New Exam Name (e.g. SSC CGL):")
         new_exam_subs = st.text_input("Enter Subjects (Comma separated):")
         if st.button("Add Exam"):
@@ -366,26 +380,34 @@ elif main_menu == "⚙️ Settings & Customization":
     with c2:
         st.subheader("Edit / Delete Subjects")
         edit_exam_del = st.selectbox("Select Exam:", list(exams_dict.keys()), key="del_sub_ex")
-        subject_to_edit = st.selectbox("Select Subject:", exams_dict[edit_exam_del])
-        
-        new_sub_name = st.text_input("Rename Subject To:", value=subject_to_edit)
-        if st.button("Rename Subject"):
-            if new_sub_name != subject_to_edit:
-                # Update in dictionary
-                idx = exams_dict[edit_exam_del].index(subject_to_edit)
-                exams_dict[edit_exam_del][idx] = new_sub_name.strip()
+        if exams_dict[edit_exam_del]:
+            subject_to_edit = st.selectbox("Select Subject:", exams_dict[edit_exam_del])
+            
+            new_sub_name = st.text_input("Rename Subject To:", value=subject_to_edit)
+            if st.button("Rename Subject"):
+                if new_sub_name != subject_to_edit:
+                    idx = exams_dict[edit_exam_del].index(subject_to_edit)
+                    exams_dict[edit_exam_del][idx] = new_sub_name.strip()
+                    save_exams(exams_dict)
+                    
+                    # Also migrate chapters to new subject name
+                    if subject_to_edit in saved_chapters:
+                        saved_chapters[new_sub_name.strip()] = saved_chapters.pop(subject_to_edit)
+                        save_chapters(saved_chapters)
+                        
+                    update_csv_values("Subject", subject_to_edit, new_sub_name.strip())
+                    st.success("Renamed successfully!")
+                    st.rerun()
+                    
+            if st.button("🗑️ Delete Subject", type="primary"):
+                exams_dict[edit_exam_del].remove(subject_to_edit)
                 save_exams(exams_dict)
-                # Update in old records
-                update_csv_values("Subject", subject_to_edit, new_sub_name.strip())
-                st.success("Renamed successfully!")
+                if subject_to_edit in saved_chapters:
+                    del saved_chapters[subject_to_edit]
+                    save_chapters(saved_chapters)
+                st.warning("Subject Deleted.")
                 st.rerun()
                 
-        if st.button("🗑️ Delete Subject", type="primary"):
-            exams_dict[edit_exam_del].remove(subject_to_edit)
-            save_exams(exams_dict)
-            st.warning("Subject Deleted (Old records are kept safe in database).")
-            st.rerun()
-            
         st.divider()
         if st.button("🚨 Delete Entire Exam Category", type="primary"):
             del exams_dict[edit_exam_del]
@@ -394,28 +416,62 @@ elif main_menu == "⚙️ Settings & Customization":
             
     st.divider()
     
-    st.header("2. Chapter List Management")
-    st.write("Manage the chapters that automatically appear in the drop-down.")
+    # ------------------ BULK CHAPTER MANAGEMENT ------------------
+    st.header("2. Bulk Chapter List Management")
+    st.write("Add all chapters for a specific subject at once, or edit existing ones.")
     
     col3, col4 = st.columns(2)
     with col3:
-        chap_to_edit = st.selectbox("Select Chapter:", saved_chapters)
+        st.subheader("Bulk Add Chapters")
+        bulk_exam = st.selectbox("Select Exam:", list(exams_dict.keys()), key="bulk_ex")
+        if exams_dict[bulk_exam]:
+            bulk_sub = st.selectbox("Select Subject:", exams_dict[bulk_exam], key="bulk_sub")
+            
+            # THE MAGIC TEXT AREA FOR BULK ADDITION
+            bulk_chaps = st.text_area("Paste Chapters Here (Comma separated):\ne.g. Percentage, Algebra, Geometry, Average")
+            
+            if st.button("Add Chapters in Bulk", type="secondary"):
+                if bulk_chaps.strip():
+                    if bulk_sub not in saved_chapters:
+                        saved_chapters[bulk_sub] = []
+                        
+                    new_chaps = [c.strip() for c in bulk_chaps.split(",") if c.strip()]
+                    added_count = 0
+                    for nc in new_chaps:
+                        if nc not in saved_chapters[bulk_sub]:
+                            saved_chapters[bulk_sub].append(nc)
+                            added_count += 1
+                            
+                    if added_count > 0:
+                        save_chapters(saved_chapters)
+                        st.success(f"Successfully added {added_count} new chapters to {bulk_sub}!")
+                        st.rerun()
+                    else:
+                        st.info("These chapters already exist.")
+
     with col4:
-        new_chap_name = st.text_input("Rename Chapter To:", value=chap_to_edit)
+        st.subheader("Edit / Delete Existing Chapter")
+        edit_sub_chap = st.selectbox("Select Subject to view Chapters:", list(saved_chapters.keys()), key="edit_sub_chap")
         
-        c_btn1, c_btn2 = st.columns(2)
-        with c_btn1:
-            if st.button("Rename Chapter"):
-                if new_chap_name != chap_to_edit:
-                    idx = saved_chapters.index(chap_to_edit)
-                    saved_chapters[idx] = new_chap_name.strip()
+        if edit_sub_chap and saved_chapters[edit_sub_chap]:
+            chap_to_edit = st.selectbox("Select Chapter:", saved_chapters[edit_sub_chap])
+            new_chap_name = st.text_input("Rename Chapter To:", value=chap_to_edit)
+            
+            c_btn1, c_btn2 = st.columns(2)
+            with c_btn1:
+                if st.button("Rename Chapter"):
+                    if new_chap_name != chap_to_edit:
+                        idx = saved_chapters[edit_sub_chap].index(chap_to_edit)
+                        saved_chapters[edit_sub_chap][idx] = new_chap_name.strip()
+                        save_chapters(saved_chapters)
+                        update_csv_values("Chapter", chap_to_edit, new_chap_name.strip())
+                        st.success("Chapter Renamed!")
+                        st.rerun()
+            with c_btn2:
+                if st.button("🗑️ Delete Chapter", type="primary"):
+                    saved_chapters[edit_sub_chap].remove(chap_to_edit)
                     save_chapters(saved_chapters)
-                    update_csv_values("Chapter", chap_to_edit, new_chap_name.strip())
-                    st.success("Chapter Renamed!")
+                    st.warning("Chapter removed from Dropdown.")
                     st.rerun()
-        with c_btn2:
-            if st.button("🗑️ Delete Chapter", type="primary"):
-                saved_chapters.remove(chap_to_edit)
-                save_chapters(saved_chapters)
-                st.warning("Chapter removed from Dropdown.")
-                st.rerun()
+        else:
+            st.info("No chapters added to this subject yet.")

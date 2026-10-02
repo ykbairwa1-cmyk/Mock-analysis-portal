@@ -142,71 +142,77 @@ if main_menu == "📤 Upload Questions":
 
         uploaded_files = st.file_uploader("3. Upload Screenshots (Select multiple)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         
+        # FORM HATA DIYA GAYA HAI TAKI LIVE UPDATE HO SAKE
         if uploaded_files:
-            with st.form("batch_upload_form"):
-                metadata = []
-                for i, file in enumerate(uploaded_files):
-                    st.subheader(f"Question {i+1}")
-                    c1, c2, c3 = st.columns([1, 1.5, 1.5])
+            metadata = []
+            st.info("Fill the details below. Chapters will dynamically update based on the Subject selected.")
+            
+            for i, file in enumerate(uploaded_files):
+                st.subheader(f"Question {i+1}")
+                c1, c2, c3 = st.columns([1, 1.5, 1.5])
+                
+                with c1:
+                    img = Image.open(file).convert('RGB')
+                    st.image(img, use_container_width=True)
+                with c2:
+                    # Subject badalte hi form refresh hoga aur chapter list turant change hogi
+                    subj = st.selectbox("Subject", available_subjects, key=f"sub_{i}")
                     
-                    with c1:
-                        img = Image.open(file).convert('RGB')
-                        st.image(img, use_container_width=True)
-                    with c2:
-                        subj = st.selectbox("Subject", available_subjects, key=f"sub_{i}")
-                        
-                        subject_chapters = saved_chapters.get(subj, [])
-                        chap_choice = st.selectbox("Chapter", ["-- Add New Chapter --"] + subject_chapters, key=f"chap_choice_{i}")
-                        
-                        if chap_choice == "-- Add New Chapter --":
-                            chap = st.text_input("Type New Chapter Name", key=f"chap_new_{i}")
-                        else:
-                            chap = chap_choice
-                            
-                        micro = st.text_input("Micro Topic", "General", key=f"mic_{i}")
-                    with c3:
-                        reason = st.selectbox("Reason", reasons_list, key=f"res_{i}")
-                        time_sec = st.number_input("Time Taken (sec)", min_value=0, value=60, key=f"time_{i}")
+                    # DYNAMIC CHAPTER LIST BASED ON EXACT SUBJECT
+                    subject_chapters = saved_chapters.get(subj, [])
+                    chap_choice = st.selectbox("Chapter", ["-- Add New Chapter --"] + subject_chapters, key=f"chap_choice_{i}")
                     
-                    metadata.append({"img": img, "subj": subj, "chap": chap, "micro": micro, "reason": reason, "time": time_sec})
-                    st.divider()
-                    
-                if st.form_submit_button("💾 Save All Questions"):
-                    if not mock_name:
-                        st.error("Mock Test Name is required!")
+                    if chap_choice == "-- Add New Chapter --":
+                        chap = st.text_input("Type New Chapter Name", key=f"chap_new_{i}")
                     else:
-                        new_chapters_added = False
-                        for data in metadata:
-                            if data["chap"]:
-                                current_sub = data["subj"]
-                                if current_sub not in saved_chapters:
-                                    saved_chapters[current_sub] = []
-                                if data["chap"].strip() not in saved_chapters[current_sub]:
-                                    saved_chapters[current_sub].append(data["chap"].strip())
-                                    new_chapters_added = True
-                                
-                            filename = f"{uuid.uuid4().hex}.jpg"
-                            img_path = os.path.join(IMAGE_DIR, filename)
-                            data["img"].thumbnail((1200, 1200))
-                            data["img"].save(img_path, "JPEG", quality=85)
+                        chap = chap_choice
+                        
+                    micro = st.text_input("Micro Topic", "General", key=f"mic_{i}")
+                with c3:
+                    reason = st.selectbox("Reason", reasons_list, key=f"res_{i}")
+                    time_sec = st.number_input("Time Taken (sec)", min_value=0, value=60, key=f"time_{i}")
+                
+                metadata.append({"img": img, "subj": subj, "chap": chap, "micro": micro, "reason": reason, "time": time_sec})
+                st.divider()
+                
+            # Regular button (Form block ke bahar)
+            if st.button("💾 Save All Questions", type="primary"):
+                if not mock_name:
+                    st.error("Mock Test Name is required!")
+                else:
+                    new_chapters_added = False
+                    for data in metadata:
+                        if data["chap"]:
+                            current_sub = data["subj"]
+                            if current_sub not in saved_chapters:
+                                saved_chapters[current_sub] = []
+                            if data["chap"].strip() not in saved_chapters[current_sub]:
+                                saved_chapters[current_sub].append(data["chap"].strip())
+                                new_chapters_added = True
                             
-                            save_data({
-                                "Date": datetime.now().strftime("%Y-%m-%d"),
-                                "Exam_Category": selected_exam,
-                                "Mock_Name": mock_name,
-                                "Subject": data["subj"],
-                                "Chapter": data["chap"].strip(),
-                                "Micro_Topic": data["micro"],
-                                "Mistake_Reason": data["reason"],
-                                "Time_Taken_Sec": data["time"],
-                                "Image_Path": img_path,
-                                "Next_Revision_Date": calculate_revision_date(data["reason"])
-                            })
-                            
-                        if new_chapters_added:
-                            save_chapters(saved_chapters)
-                            
-                        st.success("✅ Logged successfully! Chapters linked to subjects automatically.")
+                        filename = f"{uuid.uuid4().hex}.jpg"
+                        img_path = os.path.join(IMAGE_DIR, filename)
+                        data["img"].thumbnail((1200, 1200))
+                        data["img"].save(img_path, "JPEG", quality=85)
+                        
+                        save_data({
+                            "Date": datetime.now().strftime("%Y-%m-%d"),
+                            "Exam_Category": selected_exam,
+                            "Mock_Name": mock_name,
+                            "Subject": data["subj"],
+                            "Chapter": data["chap"].strip(),
+                            "Micro_Topic": data["micro"],
+                            "Mistake_Reason": data["reason"],
+                            "Time_Taken_Sec": data["time"],
+                            "Image_Path": img_path,
+                            "Next_Revision_Date": calculate_revision_date(data["reason"])
+                        })
+                        
+                    if new_chapters_added:
+                        save_chapters(saved_chapters)
+                        
+                    st.success("✅ Logged successfully! Chapters linked to subjects automatically.")
+                    # st.rerun() laga sakte hain par jarurat nahi page success de dega
 
 # --- 2. Manage & Delete Sections ---
 elif main_menu == "📂 Manage & Delete":
@@ -423,7 +429,7 @@ elif main_menu == "⚙️ Settings & Bulk Upload":
         if exams_dict[bulk_exam]:
             bulk_sub = st.selectbox("Select Subject:", exams_dict[bulk_exam], key="bulk_sub")
             
-            # --- VIEW EXISTING CHAPTERS BUTTON (Expander) ---
+            # VIEW EXISTING CHAPTERS BUTTON
             existing_chaps = saved_chapters.get(bulk_sub, [])
             with st.expander(f"👀 View {len(existing_chaps)} Existing Chapters"):
                 if existing_chaps:
@@ -471,7 +477,7 @@ elif main_menu == "⚙️ Settings & Bulk Upload":
                         st.success("Chapter Renamed!")
                         st.rerun()
             with c_btn2:
-                if st.button("🗑️️ Delete Chapter", type="primary"):
+                if st.button("🗑 Delete Chapter", type="primary"):
                     saved_chapters[edit_sub_chap].remove(chap_to_edit)
                     save_chapters(saved_chapters)
                     st.warning("Chapter removed from Dropdown.")

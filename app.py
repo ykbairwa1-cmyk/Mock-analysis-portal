@@ -38,7 +38,6 @@ def load_chapters():
     if os.path.exists(CHAPTERS_FILE):
         with open(CHAPTERS_FILE, 'r') as f:
             data = json.load(f)
-            # Smart Migration: Agar purani file list format me hai, toh usko Dictionary me convert karega
             if isinstance(data, list):
                 return {"General": data}
             return data
@@ -156,7 +155,6 @@ if main_menu == "📤 Upload Questions":
                     with c2:
                         subj = st.selectbox("Subject", available_subjects, key=f"sub_{i}")
                         
-                        # Subject-wise Chapter logic
                         subject_chapters = saved_chapters.get(subj, [])
                         chap_choice = st.selectbox("Chapter", ["-- Add New Chapter --"] + subject_chapters, key=f"chap_choice_{i}")
                         
@@ -179,7 +177,6 @@ if main_menu == "📤 Upload Questions":
                     else:
                         new_chapters_added = False
                         for data in metadata:
-                            # Save new chapters subject-wise automatically
                             if data["chap"]:
                                 current_sub = data["subj"]
                                 if current_sub not in saved_chapters:
@@ -390,7 +387,6 @@ elif main_menu == "⚙️ Settings & Bulk Upload":
                     exams_dict[edit_exam_del][idx] = new_sub_name.strip()
                     save_exams(exams_dict)
                     
-                    # Also migrate chapters to new subject name
                     if subject_to_edit in saved_chapters:
                         saved_chapters[new_sub_name.strip()] = saved_chapters.pop(subject_to_edit)
                         save_chapters(saved_chapters)
@@ -427,7 +423,14 @@ elif main_menu == "⚙️ Settings & Bulk Upload":
         if exams_dict[bulk_exam]:
             bulk_sub = st.selectbox("Select Subject:", exams_dict[bulk_exam], key="bulk_sub")
             
-            # THE MAGIC TEXT AREA FOR BULK ADDITION
+            # --- VIEW EXISTING CHAPTERS BUTTON (Expander) ---
+            existing_chaps = saved_chapters.get(bulk_sub, [])
+            with st.expander(f"👀 View {len(existing_chaps)} Existing Chapters"):
+                if existing_chaps:
+                    st.write(", ".join(existing_chaps))
+                else:
+                    st.write("No chapters added to this subject yet.")
+            
             bulk_chaps = st.text_area("Paste Chapters Here (Comma separated):\ne.g. Percentage, Algebra, Geometry, Average")
             
             if st.button("Add Chapters in Bulk", type="secondary"):
@@ -468,7 +471,7 @@ elif main_menu == "⚙️ Settings & Bulk Upload":
                         st.success("Chapter Renamed!")
                         st.rerun()
             with c_btn2:
-                if st.button("🗑️ Delete Chapter", type="primary"):
+                if st.button("🗑️️ Delete Chapter", type="primary"):
                     saved_chapters[edit_sub_chap].remove(chap_to_edit)
                     save_chapters(saved_chapters)
                     st.warning("Chapter removed from Dropdown.")

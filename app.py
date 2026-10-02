@@ -180,7 +180,7 @@ if main_menu == "📤 Upload Questions":
                     else:
                         chap = chap_choice
                     
-                    # DYNAMIC MICRO-TOPIC LOGIC
+                    # DYNAMIC MICRO-TOPIC LOGIC (Strictly linked to the Chapter chosen)
                     chapter_micros = saved_micros.get(chap, []) if chap else []
                     micro_choice = st.selectbox("Micro Topic", ["-- Add New Micro Topic --", "General"] + chapter_micros, key=f"mic_choice_{i}")
                     if micro_choice == "-- Add New Micro Topic --":
@@ -201,7 +201,6 @@ if main_menu == "📤 Upload Questions":
                 else:
                     new_struct_added = False
                     for data in metadata:
-                        # Save Chapter dynamically
                         if data["chap"]:
                             current_sub = data["subj"]
                             if current_sub not in saved_chapters:
@@ -210,7 +209,6 @@ if main_menu == "📤 Upload Questions":
                                 saved_chapters[current_sub].append(data["chap"].strip())
                                 new_struct_added = True
                                 
-                        # Save Micro-Topic dynamically
                         if data["micro"] and data["micro"] != "General" and data["chap"]:
                             current_chap = data["chap"].strip()
                             if current_chap not in saved_micros:
@@ -451,6 +449,7 @@ elif main_menu == "⚙️ Settings & Bulk Upload":
     with st.expander("Expand to Manage Chapters"):
         col3, col4 = st.columns(2)
         with col3:
+            st.subheader("Bulk Add Chapters")
             bulk_exam = st.selectbox("Select Exam:", list(exams_dict.keys()), key="bulk_ex")
             if exams_dict[bulk_exam]:
                 bulk_sub = st.selectbox("Select Subject:", exams_dict[bulk_exam], key="bulk_sub")
@@ -471,36 +470,41 @@ elif main_menu == "⚙️ Settings & Bulk Upload":
                         st.rerun()
 
         with col4:
-            edit_sub_chap = st.selectbox("Select Subject to view Chapters:", list(saved_chapters.keys()), key="edit_sub_chap")
-            if edit_sub_chap and saved_chapters[edit_sub_chap]:
-                chap_to_edit = st.selectbox("Select Chapter:", saved_chapters[edit_sub_chap])
-                new_chap_name = st.text_input("Rename Chapter To:", value=chap_to_edit)
-                
-                c_btn1, c_btn2 = st.columns(2)
-                with c_btn1:
-                    if st.button("Rename Chapter"):
-                        if new_chap_name != chap_to_edit:
-                            idx = saved_chapters[edit_sub_chap].index(chap_to_edit)
-                            saved_chapters[edit_sub_chap][idx] = new_chap_name.strip()
-                            save_chapters(saved_chapters)
-                            
-                            # Migrate Micro-topics too!
-                            if chap_to_edit in saved_micros:
-                                saved_micros[new_chap_name.strip()] = saved_micros.pop(chap_to_edit)
-                                save_micros(saved_micros)
+            st.subheader("Edit / Delete Chapter")
+            edit_c_exam = st.selectbox("Select Exam:", list(exams_dict.keys()), key="edit_c_ex")
+            if exams_dict[edit_c_exam]:
+                # Error Fixed: Now it strictly takes subject from the selected exam
+                edit_c_sub = st.selectbox("Select Subject to view Chapters:", exams_dict[edit_c_exam], key="edit_c_sub")
+                if edit_c_sub in saved_chapters and saved_chapters[edit_c_sub]:
+                    chap_to_edit = st.selectbox("Select Chapter:", saved_chapters[edit_c_sub])
+                    new_chap_name = st.text_input("Rename Chapter To:", value=chap_to_edit)
+                    
+                    c_btn1, c_btn2 = st.columns(2)
+                    with c_btn1:
+                        if st.button("Rename Chapter"):
+                            if new_chap_name != chap_to_edit:
+                                idx = saved_chapters[edit_c_sub].index(chap_to_edit)
+                                saved_chapters[edit_c_sub][idx] = new_chap_name.strip()
+                                save_chapters(saved_chapters)
                                 
-                            update_csv_values("Chapter", chap_to_edit, new_chap_name.strip())
-                            st.success("Chapter Renamed!")
+                                if chap_to_edit in saved_micros:
+                                    saved_micros[new_chap_name.strip()] = saved_micros.pop(chap_to_edit)
+                                    save_micros(saved_micros)
+                                    
+                                update_csv_values("Chapter", chap_to_edit, new_chap_name.strip())
+                                st.success("Chapter Renamed!")
+                                st.rerun()
+                    with c_btn2:
+                        if st.button("🗑 Delete Chapter", type="primary"):
+                            saved_chapters[edit_c_sub].remove(chap_to_edit)
+                            save_chapters(saved_chapters)
+                            if chap_to_edit in saved_micros:
+                                del saved_micros[chap_to_edit]
+                                save_micros(saved_micros)
+                            st.warning("Chapter removed.")
                             st.rerun()
-                with c_btn2:
-                    if st.button("🗑 Delete Chapter", type="primary"):
-                        saved_chapters[edit_sub_chap].remove(chap_to_edit)
-                        save_chapters(saved_chapters)
-                        if chap_to_edit in saved_micros:
-                            del saved_micros[chap_to_edit]
-                            save_micros(saved_micros)
-                        st.warning("Chapter removed.")
-                        st.rerun()
+                else:
+                    st.info("No chapters added to this subject yet.")
 
     st.divider()
 
@@ -509,6 +513,7 @@ elif main_menu == "⚙️ Settings & Bulk Upload":
     with st.expander("Expand to Manage Micro-Topics"):
         col5, col6 = st.columns(2)
         with col5:
+            st.subheader("Bulk Add Micro-Topics")
             m_exam = st.selectbox("Select Exam:", list(exams_dict.keys()), key="m_ex")
             if exams_dict[m_exam]:
                 m_sub = st.selectbox("Select Subject:", exams_dict[m_exam], key="m_sub")
@@ -533,24 +538,34 @@ elif main_menu == "⚙️ Settings & Bulk Upload":
                     st.info("No chapters in this subject yet.")
 
         with col6:
-            edit_chap_m = st.selectbox("Select Chapter to view Micro-Topics:", list(saved_micros.keys()), key="edit_chap_m")
-            if edit_chap_m and saved_micros[edit_chap_m]:
-                micro_to_edit = st.selectbox("Select Micro-Topic:", saved_micros[edit_chap_m])
-                new_micro_name = st.text_input("Rename Micro-Topic To:", value=micro_to_edit)
-                
-                m_btn1, m_btn2 = st.columns(2)
-                with m_btn1:
-                    if st.button("Rename Micro-Topic"):
-                        if new_micro_name != micro_to_edit:
-                            idx = saved_micros[edit_chap_m].index(micro_to_edit)
-                            saved_micros[edit_chap_m][idx] = new_micro_name.strip()
-                            save_micros(saved_micros)
-                            update_csv_values("Micro_Topic", micro_to_edit, new_micro_name.strip())
-                            st.success("Micro-Topic Renamed!")
-                            st.rerun()
-                with m_btn2:
-                    if st.button("🗑 Delete Micro-Topic", type="primary"):
-                        saved_micros[edit_chap_m].remove(micro_to_edit)
-                        save_micros(saved_micros)
-                        st.warning("Micro-Topic removed.")
-                        st.rerun()
+            st.subheader("Edit / Delete Micro-Topic")
+            edit_m_ex = st.selectbox("Select Exam:", list(exams_dict.keys()), key="edit_m_ex")
+            if exams_dict[edit_m_ex]:
+                edit_m_sub = st.selectbox("Select Subject:", exams_dict[edit_m_ex], key="edit_m_sub")
+                if edit_m_sub in saved_chapters and saved_chapters[edit_m_sub]:
+                    # Error Fixed: Now it strictly takes chapter from the selected subject
+                    edit_m_chap = st.selectbox("Select Chapter to view Micro-Topics:", saved_chapters[edit_m_sub], key="edit_m_chap")
+                    if edit_m_chap in saved_micros and saved_micros[edit_m_chap]:
+                        micro_to_edit = st.selectbox("Select Micro-Topic:", saved_micros[edit_m_chap])
+                        new_micro_name = st.text_input("Rename Micro-Topic To:", value=micro_to_edit)
+                        
+                        m_btn1, m_btn2 = st.columns(2)
+                        with m_btn1:
+                            if st.button("Rename Micro-Topic"):
+                                if new_micro_name != micro_to_edit:
+                                    idx = saved_micros[edit_m_chap].index(micro_to_edit)
+                                    saved_micros[edit_m_chap][idx] = new_micro_name.strip()
+                                    save_micros(saved_micros)
+                                    update_csv_values("Micro_Topic", micro_to_edit, new_micro_name.strip())
+                                    st.success("Micro-Topic Renamed!")
+                                    st.rerun()
+                        with m_btn2:
+                            if st.button("🗑 Delete Micro-Topic", type="primary"):
+                                saved_micros[edit_m_chap].remove(micro_to_edit)
+                                save_micros(saved_micros)
+                                st.warning("Micro-Topic removed.")
+                                st.rerun()
+                    else:
+                        st.info("No micro-topics added to this chapter yet.")
+                else:
+                    st.info("No chapters available in this subject.")

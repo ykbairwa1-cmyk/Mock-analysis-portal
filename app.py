@@ -35,6 +35,9 @@ st.set_page_config(page_title="Mock Analysis Pro", layout="wide")
 st.sidebar.title("⚙️ Settings")
 api_key = st.sidebar.text_input("Enter Gemini API Key:", type="password")
 
+# Yahan naya Model Selector add kiya gaya hai error fix karne ke liye
+selected_model = st.sidebar.selectbox("Select AI Model:", ["gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-1.5-flash"])
+
 st.sidebar.title("🎯 Navigation")
 main_menu = st.sidebar.radio("Go To:", ["Batch Upload (Smart OCR)", "Mock Sections", "Dashboard", "Export PDF"])
 
@@ -58,7 +61,6 @@ if main_menu == "Batch Upload (Smart OCR)":
     if uploaded_files:
         st.info(f"{len(uploaded_files)} images uploaded. Fill details below and extract all at once.")
         
-        # Form use karne se dropdown select karte waqt page refresh nahi hoga
         with st.form("batch_processing_form"):
             metadata = []
             
@@ -90,7 +92,8 @@ if main_menu == "Batch Upload (Smart OCR)":
                     st.error("Please enter a Mock Test Name!")
                 else:
                     genai.configure(api_key=api_key)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    # Ab yeh dynamic model use karega jo aap sidebar se select karenge
+                    model = genai.GenerativeModel(selected_model)
                     
                     progress_bar = st.progress(0)
                     status_text = st.empty()
@@ -99,14 +102,12 @@ if main_menu == "Batch Upload (Smart OCR)":
                         status_text.text(f"Extracting text for Question {idx+1}/{len(metadata)}...")
                         
                         try:
-                            # Prompt to extract only relevant question text
                             prompt = "Extract ONLY the main question text from this image. Do not include the options (A, B, C, D) unless they are part of the question logic. Ignore any UI elements like battery, time, or buttons."
                             response = model.generate_content([prompt, data["img"]])
                             extracted_text = response.text.strip()
                         except Exception as e:
                             extracted_text = f"[Error extracting text: {e}]"
                             
-                        # Save to CSV
                         save_data({
                             "Date": datetime.now().strftime("%Y-%m-%d"),
                             "Mock_Name": mock_name,
@@ -119,7 +120,6 @@ if main_menu == "Batch Upload (Smart OCR)":
                         
                         progress_bar.progress((idx + 1) / len(metadata))
                         
-                        # IMPORTANT: 3 second delay to strictly prevent Gemini API Free Tier Quota Limit
                         if idx < len(metadata) - 1:
                             time.sleep(3)
                             
@@ -200,7 +200,6 @@ elif main_menu == "Export PDF":
                     pdf.cell(0, 6, f"Reason: {row['Mistake_Reason']} | Time: {row['Time_Taken_Sec']}s", ln=True)
                     
                     pdf.set_font("Arial", '', 10)
-                    # Handle special characters safely for PDF
                     q_text = str(row['Question_Text']).encode('latin-1', 'replace').decode('latin-1')
                     pdf.multi_cell(0, 6, f"{q_text}")
                     pdf.cell(0, 6, "-" * 50, ln=True)

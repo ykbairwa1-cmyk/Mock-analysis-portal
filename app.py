@@ -12,6 +12,7 @@ DATA_FILE = "mock_data_images.csv"
 IMAGE_DIR = "saved_images"
 EXAMS_FILE = "exams_settings.json"
 CHAPTERS_FILE = "chapters_settings.json"
+MICROS_FILE = "micro_topics_settings.json"
 
 if not os.path.exists(IMAGE_DIR):
     os.makedirs(IMAGE_DIR)
@@ -38,8 +39,7 @@ def load_chapters():
     if os.path.exists(CHAPTERS_FILE):
         with open(CHAPTERS_FILE, 'r') as f:
             data = json.load(f)
-            if isinstance(data, list):
-                return {"General": data}
+            if isinstance(data, list): return {"General": data}
             return data
     else:
         default_chapters = {
@@ -54,6 +54,23 @@ def save_chapters(chapters_dict):
     with open(CHAPTERS_FILE, 'w') as f:
         json.dump(chapters_dict, f)
 
+def load_micros():
+    if os.path.exists(MICROS_FILE):
+        with open(MICROS_FILE, 'r') as f:
+            return json.load(f)
+    else:
+        default_micros = {
+            "Fundamental Rights": ["Article 14-18", "Article 19-22", "Writs"],
+            "Time & Work": ["Efficiency based", "Alternating Days", "Men-Women-Children"]
+        }
+        with open(MICROS_FILE, 'w') as f:
+            json.dump(default_micros, f)
+        return default_micros
+
+def save_micros(micros_dict):
+    with open(MICROS_FILE, 'w') as f:
+        json.dump(micros_dict, f)
+
 # --- Database Manager ---
 def init_db():
     df = pd.DataFrame(columns=[
@@ -66,8 +83,7 @@ def load_data():
     if os.path.exists(DATA_FILE):
         try:
             df = pd.read_csv(DATA_FILE)
-            if "Exam_Category" not in df.columns:
-                raise ValueError("Old CSV Schema")
+            if "Exam_Category" not in df.columns: raise ValueError("Old CSV Schema")
             return df
         except Exception:
             try: os.rename(DATA_FILE, f"backup_corrupted_{uuid.uuid4().hex[:5]}.csv")
@@ -121,6 +137,7 @@ main_menu = st.sidebar.radio("Navigation:", [
 df_global = load_data()
 exams_dict = load_exams()
 saved_chapters = load_chapters()
+saved_micros = load_micros()
 reasons_list = ["Silly Mistake", "Conceptual Gap", "Memory/Fact Based", "Time Pressure", "Skipped", "Overtime", "Clueless"]
 
 # --- 1. Upload Question Images ---
@@ -143,70 +160,88 @@ if main_menu == "📤 Upload Questions":
         uploaded_files = st.file_uploader("3. Upload Screenshots (Select multiple)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         
         if uploaded_files:
-            with st.form("batch_upload_form"):
-                metadata = []
-                for i, file in enumerate(uploaded_files):
-                    st.subheader(f"Question {i+1}")
-                    c1, c2, c3 = st.columns([1, 1.5, 1.5])
+            metadata = []
+            st.info("Fill the details below. Chapters and Micro-Topics will dynamically link & update.")
+            
+            for i, file in enumerate(uploaded_files):
+                st.subheader(f"Question {i+1}")
+                c1, c2, c3 = st.columns([1, 1.5, 1.5])
+                
+                with c1:
+                    img = Image.open(file).convert('RGB')
+                    st.image(img, use_container_width=True)
+                with c2:
+                    subj = st.selectbox("Subject", available_subjects, key=f"sub_{i}")
                     
-                    with c1:
-                        img = Image.open(file).convert('RGB')
-                        st.image(img, use_container_width=True)
-                    with c2:
-                        subj = st.selectbox("Subject", available_subjects, key=f"sub_{i}")
-                        
-                        subject_chapters = saved_chapters.get(subj, [])
-                        chap_choice = st.selectbox("Chapter", ["-- Add New Chapter --"] + subject_chapters, key=f"chap_choice_{i}")
-                        
-                        if chap_choice == "-- Add New Chapter --":
-                            chap = st.text_input("Type New Chapter Name", key=f"chap_new_{i}")
-                        else:
-                            chap = chap_choice
-                            
-                        micro = st.text_input("Micro Topic", "General", key=f"mic_{i}")
-                    with c3:
-                        reason = st.selectbox("Reason", reasons_list, key=f"res_{i}")
-                        time_sec = st.number_input("Time Taken (sec)", min_value=0, value=60, key=f"time_{i}")
-                    
-                    metadata.append({"img": img, "subj": subj, "chap": chap, "micro": micro, "reason": reason, "time": time_sec})
-                    st.divider()
-                    
-                if st.form_submit_button("💾 Save All Questions"):
-                    if not mock_name:
-                        st.error("Mock Test Name is required!")
+                    subject_chapters = saved_chapters.get(subj, [])
+                    chap_choice = st.selectbox("Chapter", ["-- Add New Chapter --"] + subject_chapters, key=f"chap_choice_{i}")
+                    if chap_choice == "-- Add New Chapter --":
+                        chap = st.text_input("Type New Chapter Name", key=f"chap_new_{i}")
                     else:
-                        new_chapters_added = False
-                        for data in metadata:
-                            if data["chap"]:
-                                current_sub = data["subj"]
-                                if current_sub not in saved_chapters:
-                                    saved_chapters[current_sub] = []
-                                if data["chap"].strip() not in saved_chapters[current_sub]:
-                                    saved_chapters[current_sub].append(data["chap"].strip())
-                                    new_chapters_added = True
+                        chap = chap_choice
+                    
+                    # DYNAMIC MICRO-TOPIC LOGIC
+                    chapter_micros = saved_micros.get(chap, []) if chap else []
+                    micro_choice = st.selectbox("Micro Topic", ["-- Add New Micro Topic --", "General"] + chapter_micros, key=f"mic_choice_{i}")
+                    if micro_choice == "-- Add New Micro Topic --":
+                        micro = st.text_input("Type New Micro Topic Name", key=f"mic_new_{i}")
+                    else:
+                        micro = micro_choice
+
+                with c3:
+                    reason = st.selectbox("Reason", reasons_list, key=f"res_{i}")
+                    time_sec = st.number_input("Time Taken (sec)", min_value=0, value=60, key=f"time_{i}")
+                
+                metadata.append({"img": img, "subj": subj, "chap": chap, "micro": micro, "reason": reason, "time": time_sec})
+                st.divider()
+                
+            if st.button("💾 Save All Questions", type="primary"):
+                if not mock_name:
+                    st.error("Mock Test Name is required!")
+                else:
+                    new_struct_added = False
+                    for data in metadata:
+                        # Save Chapter dynamically
+                        if data["chap"]:
+                            current_sub = data["subj"]
+                            if current_sub not in saved_chapters:
+                                saved_chapters[current_sub] = []
+                            if data["chap"].strip() not in saved_chapters[current_sub]:
+                                saved_chapters[current_sub].append(data["chap"].strip())
+                                new_struct_added = True
                                 
-                            filename = f"{uuid.uuid4().hex}.jpg"
-                            img_path = os.path.join(IMAGE_DIR, filename)
-                            data["img"].thumbnail((1200, 1200))
-                            data["img"].save(img_path, "JPEG", quality=85)
+                        # Save Micro-Topic dynamically
+                        if data["micro"] and data["micro"] != "General" and data["chap"]:
+                            current_chap = data["chap"].strip()
+                            if current_chap not in saved_micros:
+                                saved_micros[current_chap] = []
+                            if data["micro"].strip() not in saved_micros[current_chap]:
+                                saved_micros[current_chap].append(data["micro"].strip())
+                                new_struct_added = True
                             
-                            save_data({
-                                "Date": datetime.now().strftime("%Y-%m-%d"),
-                                "Exam_Category": selected_exam,
-                                "Mock_Name": mock_name,
-                                "Subject": data["subj"],
-                                "Chapter": data["chap"].strip(),
-                                "Micro_Topic": data["micro"],
-                                "Mistake_Reason": data["reason"],
-                                "Time_Taken_Sec": data["time"],
-                                "Image_Path": img_path,
-                                "Next_Revision_Date": calculate_revision_date(data["reason"])
-                            })
-                            
-                        if new_chapters_added:
-                            save_chapters(saved_chapters)
-                            
-                        st.success("✅ Logged successfully! Chapters linked to subjects automatically.")
+                        filename = f"{uuid.uuid4().hex}.jpg"
+                        img_path = os.path.join(IMAGE_DIR, filename)
+                        data["img"].thumbnail((1200, 1200))
+                        data["img"].save(img_path, "JPEG", quality=85)
+                        
+                        save_data({
+                            "Date": datetime.now().strftime("%Y-%m-%d"),
+                            "Exam_Category": selected_exam,
+                            "Mock_Name": mock_name,
+                            "Subject": data["subj"],
+                            "Chapter": data["chap"].strip() if data["chap"] else "",
+                            "Micro_Topic": data["micro"].strip() if data["micro"] else "General",
+                            "Mistake_Reason": data["reason"],
+                            "Time_Taken_Sec": data["time"],
+                            "Image_Path": img_path,
+                            "Next_Revision_Date": calculate_revision_date(data["reason"])
+                        })
+                        
+                    if new_struct_added:
+                        save_chapters(saved_chapters)
+                        save_micros(saved_micros)
+                        
+                    st.success("✅ Logged successfully! Chapters and Micro-Topics updated in memory.")
 
 # --- 2. Manage & Delete Sections ---
 elif main_menu == "📂 Manage & Delete":
@@ -265,10 +300,7 @@ elif main_menu == "📊 Smart Analysis & Revision":
         st.divider()
 
         st.subheader("🔥 Weakest Topics (Priority Set)")
-        
-        # ERROR FIX: Check if we have valid data for groupby to prevent KeyError
         priority_data = []
-        # dropna=False ensures we don't drop rows with empty values during grouping
         grouped = df.groupby(['Subject', 'Chapter', 'Micro_Topic'], dropna=False)
         
         for name, group in grouped:
@@ -285,12 +317,9 @@ elif main_menu == "📊 Smart Analysis & Revision":
                 "Total Mistakes": total_mistakes, "Concept Gaps": concept, "Priority Level": priority
             })
             
-        # Error fix: Only attempt to create DataFrame if priority_data is not empty
         if priority_data:
             priority_df = pd.DataFrame(priority_data).sort_values(by=["Concept Gaps", "Total Mistakes"], ascending=False)
             st.dataframe(priority_df, use_container_width=True)
-        else:
-            st.info("Not enough data to calculate priority yet.")
 
 # --- 4. Export PDF ---
 elif main_menu == "📥 Export PDF Workbook":
@@ -357,130 +386,171 @@ elif main_menu == "⚙️ Settings & Bulk Upload":
     
     # ------------------ EXAM & SUBJECTS ------------------
     st.header("1. Exam & Subject Management")
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        st.subheader("Add New Exam Category")
-        new_exam = st.text_input("New Exam Name (e.g. SSC CGL):")
-        new_exam_subs = st.text_input("Enter Subjects (Comma separated):")
-        if st.button("Add Exam"):
-            if new_exam and new_exam_subs:
-                subs_list = [s.strip() for s in new_exam_subs.split(",")]
-                exams_dict[new_exam] = subs_list
-                save_exams(exams_dict)
-                st.success(f"Added {new_exam}!")
-                st.rerun()
-                
-        st.divider()
-        edit_exam = st.selectbox("Select Exam to modify:", list(exams_dict.keys()), key="add_sub_ex")
-        add_sub = st.text_input("Add a New Subject to this Exam:")
-        if st.button("Add Subject"):
-            if add_sub and add_sub not in exams_dict[edit_exam]:
-                exams_dict[edit_exam].append(add_sub.strip())
-                save_exams(exams_dict)
-                st.success(f"Added '{add_sub}'!")
-                st.rerun()
-
-    with c2:
-        st.subheader("Edit / Delete Subjects")
-        edit_exam_del = st.selectbox("Select Exam:", list(exams_dict.keys()), key="del_sub_ex")
-        if exams_dict[edit_exam_del]:
-            subject_to_edit = st.selectbox("Select Subject:", exams_dict[edit_exam_del])
-            
-            new_sub_name = st.text_input("Rename Subject To:", value=subject_to_edit)
-            if st.button("Rename Subject"):
-                if new_sub_name != subject_to_edit:
-                    idx = exams_dict[edit_exam_del].index(subject_to_edit)
-                    exams_dict[edit_exam_del][idx] = new_sub_name.strip()
+    with st.expander("Expand to Manage Exams & Subjects"):
+        c1, c2 = st.columns(2)
+        with c1:
+            new_exam = st.text_input("New Exam Name (e.g. SSC CGL):")
+            new_exam_subs = st.text_input("Enter Subjects (Comma separated):")
+            if st.button("Add Exam"):
+                if new_exam and new_exam_subs:
+                    subs_list = [s.strip() for s in new_exam_subs.split(",")]
+                    exams_dict[new_exam] = subs_list
                     save_exams(exams_dict)
-                    
-                    if subject_to_edit in saved_chapters:
-                        saved_chapters[new_sub_name.strip()] = saved_chapters.pop(subject_to_edit)
-                        save_chapters(saved_chapters)
-                        
-                    update_csv_values("Subject", subject_to_edit, new_sub_name.strip())
-                    st.success("Renamed successfully!")
+                    st.success(f"Added {new_exam}!")
                     st.rerun()
                     
-            if st.button("🗑️ Delete Subject", type="primary"):
-                exams_dict[edit_exam_del].remove(subject_to_edit)
-                save_exams(exams_dict)
-                if subject_to_edit in saved_chapters:
-                    del saved_chapters[subject_to_edit]
-                    save_chapters(saved_chapters)
-                st.warning("Subject Deleted.")
-                st.rerun()
+            st.divider()
+            edit_exam = st.selectbox("Select Exam to modify:", list(exams_dict.keys()), key="add_sub_ex")
+            add_sub = st.text_input("Add a New Subject to this Exam:")
+            if st.button("Add Subject"):
+                if add_sub and add_sub not in exams_dict[edit_exam]:
+                    exams_dict[edit_exam].append(add_sub.strip())
+                    save_exams(exams_dict)
+                    st.success(f"Added '{add_sub}'!")
+                    st.rerun()
+
+        with c2:
+            edit_exam_del = st.selectbox("Select Exam:", list(exams_dict.keys()), key="del_sub_ex")
+            if exams_dict[edit_exam_del]:
+                subject_to_edit = st.selectbox("Select Subject:", exams_dict[edit_exam_del])
                 
-        st.divider()
-        if st.button("🚨 Delete Entire Exam Category", type="primary"):
-            del exams_dict[edit_exam_del]
-            save_exams(exams_dict)
-            st.rerun()
+                new_sub_name = st.text_input("Rename Subject To:", value=subject_to_edit)
+                if st.button("Rename Subject"):
+                    if new_sub_name != subject_to_edit:
+                        idx = exams_dict[edit_exam_del].index(subject_to_edit)
+                        exams_dict[edit_exam_del][idx] = new_sub_name.strip()
+                        save_exams(exams_dict)
+                        
+                        if subject_to_edit in saved_chapters:
+                            saved_chapters[new_sub_name.strip()] = saved_chapters.pop(subject_to_edit)
+                            save_chapters(saved_chapters)
+                            
+                        update_csv_values("Subject", subject_to_edit, new_sub_name.strip())
+                        st.success("Renamed successfully!")
+                        st.rerun()
+                        
+                if st.button("🗑️ Delete Subject", type="primary"):
+                    exams_dict[edit_exam_del].remove(subject_to_edit)
+                    save_exams(exams_dict)
+                    if subject_to_edit in saved_chapters:
+                        del saved_chapters[subject_to_edit]
+                        save_chapters(saved_chapters)
+                    st.warning("Subject Deleted.")
+                    st.rerun()
+                    
+            st.divider()
+            if st.button("🚨 Delete Entire Exam Category", type="primary"):
+                del exams_dict[edit_exam_del]
+                save_exams(exams_dict)
+                st.rerun()
             
     st.divider()
     
     # ------------------ BULK CHAPTER MANAGEMENT ------------------
-    st.header("2. Bulk Chapter List Management")
-    st.write("Add all chapters for a specific subject at once, or edit existing ones.")
-    
-    col3, col4 = st.columns(2)
-    with col3:
-        st.subheader("Bulk Add Chapters")
-        bulk_exam = st.selectbox("Select Exam:", list(exams_dict.keys()), key="bulk_ex")
-        if exams_dict[bulk_exam]:
-            bulk_sub = st.selectbox("Select Subject:", exams_dict[bulk_exam], key="bulk_sub")
-            
-            existing_chaps = saved_chapters.get(bulk_sub, [])
-            with st.expander(f"👀 View {len(existing_chaps)} Existing Chapters"):
+    st.header("2. Chapter List Management")
+    with st.expander("Expand to Manage Chapters"):
+        col3, col4 = st.columns(2)
+        with col3:
+            bulk_exam = st.selectbox("Select Exam:", list(exams_dict.keys()), key="bulk_ex")
+            if exams_dict[bulk_exam]:
+                bulk_sub = st.selectbox("Select Subject:", exams_dict[bulk_exam], key="bulk_sub")
+                
+                existing_chaps = saved_chapters.get(bulk_sub, [])
                 if existing_chaps:
-                    st.write(", ".join(existing_chaps))
-                else:
-                    st.write("No chapters added to this subject yet.")
-            
-            bulk_chaps = st.text_area("Paste Chapters Here (Comma separated):\ne.g. Percentage, Algebra, Geometry, Average")
-            
-            if st.button("Add Chapters in Bulk", type="secondary"):
-                if bulk_chaps.strip():
-                    if bulk_sub not in saved_chapters:
-                        saved_chapters[bulk_sub] = []
-                        
-                    new_chaps = [c.strip() for c in bulk_chaps.split(",") if c.strip()]
-                    added_count = 0
-                    for nc in new_chaps:
-                        if nc not in saved_chapters[bulk_sub]:
-                            saved_chapters[bulk_sub].append(nc)
-                            added_count += 1
-                            
-                    if added_count > 0:
+                    st.markdown(f"**Existing ({len(existing_chaps)}):** {', '.join(existing_chaps)}")
+                
+                bulk_chaps = st.text_area("Paste Chapters (Comma separated):")
+                if st.button("Add Chapters in Bulk"):
+                    if bulk_chaps.strip():
+                        if bulk_sub not in saved_chapters: saved_chapters[bulk_sub] = []
+                        new_chaps = [c.strip() for c in bulk_chaps.split(",") if c.strip()]
+                        for nc in new_chaps:
+                            if nc not in saved_chapters[bulk_sub]: saved_chapters[bulk_sub].append(nc)
                         save_chapters(saved_chapters)
-                        st.success(f"Successfully added {added_count} new chapters to {bulk_sub}!")
+                        st.success("Chapters Added!")
                         st.rerun()
-                    else:
-                        st.info("These chapters already exist.")
 
-    with col4:
-        st.subheader("Edit / Delete Existing Chapter")
-        edit_sub_chap = st.selectbox("Select Subject to view Chapters:", list(saved_chapters.keys()), key="edit_sub_chap")
-        
-        if edit_sub_chap and saved_chapters[edit_sub_chap]:
-            chap_to_edit = st.selectbox("Select Chapter:", saved_chapters[edit_sub_chap])
-            new_chap_name = st.text_input("Rename Chapter To:", value=chap_to_edit)
-            
-            c_btn1, c_btn2 = st.columns(2)
-            with c_btn1:
-                if st.button("Rename Chapter"):
-                    if new_chap_name != chap_to_edit:
-                        idx = saved_chapters[edit_sub_chap].index(chap_to_edit)
-                        saved_chapters[edit_sub_chap][idx] = new_chap_name.strip()
+        with col4:
+            edit_sub_chap = st.selectbox("Select Subject to view Chapters:", list(saved_chapters.keys()), key="edit_sub_chap")
+            if edit_sub_chap and saved_chapters[edit_sub_chap]:
+                chap_to_edit = st.selectbox("Select Chapter:", saved_chapters[edit_sub_chap])
+                new_chap_name = st.text_input("Rename Chapter To:", value=chap_to_edit)
+                
+                c_btn1, c_btn2 = st.columns(2)
+                with c_btn1:
+                    if st.button("Rename Chapter"):
+                        if new_chap_name != chap_to_edit:
+                            idx = saved_chapters[edit_sub_chap].index(chap_to_edit)
+                            saved_chapters[edit_sub_chap][idx] = new_chap_name.strip()
+                            save_chapters(saved_chapters)
+                            
+                            # Migrate Micro-topics too!
+                            if chap_to_edit in saved_micros:
+                                saved_micros[new_chap_name.strip()] = saved_micros.pop(chap_to_edit)
+                                save_micros(saved_micros)
+                                
+                            update_csv_values("Chapter", chap_to_edit, new_chap_name.strip())
+                            st.success("Chapter Renamed!")
+                            st.rerun()
+                with c_btn2:
+                    if st.button("🗑 Delete Chapter", type="primary"):
+                        saved_chapters[edit_sub_chap].remove(chap_to_edit)
                         save_chapters(saved_chapters)
-                        update_csv_values("Chapter", chap_to_edit, new_chap_name.strip())
-                        st.success("Chapter Renamed!")
+                        if chap_to_edit in saved_micros:
+                            del saved_micros[chap_to_edit]
+                            save_micros(saved_micros)
+                        st.warning("Chapter removed.")
                         st.rerun()
-            with c_btn2:
-                if st.button("🗑 Delete Chapter", type="primary"):
-                    saved_chapters[edit_sub_chap].remove(chap_to_edit)
-                    save_chapters(saved_chapters)
-                    st.warning("Chapter removed from Dropdown.")
-                    st.rerun()
-        else:
-            st.info("No chapters added to this subject yet.")
+
+    st.divider()
+
+    # ------------------ BULK MICRO-TOPIC MANAGEMENT ------------------
+    st.header("3. Micro-Topic Management")
+    with st.expander("Expand to Manage Micro-Topics"):
+        col5, col6 = st.columns(2)
+        with col5:
+            m_exam = st.selectbox("Select Exam:", list(exams_dict.keys()), key="m_ex")
+            if exams_dict[m_exam]:
+                m_sub = st.selectbox("Select Subject:", exams_dict[m_exam], key="m_sub")
+                if m_sub in saved_chapters and saved_chapters[m_sub]:
+                    m_chap = st.selectbox("Select Chapter:", saved_chapters[m_sub], key="m_chap")
+                    
+                    existing_micros = saved_micros.get(m_chap, [])
+                    if existing_micros:
+                        st.markdown(f"**Existing ({len(existing_micros)}):** {', '.join(existing_micros)}")
+                        
+                    bulk_micros = st.text_area("Paste Micro-Topics (Comma separated):")
+                    if st.button("Add Micro-Topics in Bulk"):
+                        if bulk_micros.strip():
+                            if m_chap not in saved_micros: saved_micros[m_chap] = []
+                            new_micros = [m.strip() for m in bulk_micros.split(",") if m.strip()]
+                            for nm in new_micros:
+                                if nm not in saved_micros[m_chap]: saved_micros[m_chap].append(nm)
+                            save_micros(saved_micros)
+                            st.success("Micro-Topics Added!")
+                            st.rerun()
+                else:
+                    st.info("No chapters in this subject yet.")
+
+        with col6:
+            edit_chap_m = st.selectbox("Select Chapter to view Micro-Topics:", list(saved_micros.keys()), key="edit_chap_m")
+            if edit_chap_m and saved_micros[edit_chap_m]:
+                micro_to_edit = st.selectbox("Select Micro-Topic:", saved_micros[edit_chap_m])
+                new_micro_name = st.text_input("Rename Micro-Topic To:", value=micro_to_edit)
+                
+                m_btn1, m_btn2 = st.columns(2)
+                with m_btn1:
+                    if st.button("Rename Micro-Topic"):
+                        if new_micro_name != micro_to_edit:
+                            idx = saved_micros[edit_chap_m].index(micro_to_edit)
+                            saved_micros[edit_chap_m][idx] = new_micro_name.strip()
+                            save_micros(saved_micros)
+                            update_csv_values("Micro_Topic", micro_to_edit, new_micro_name.strip())
+                            st.success("Micro-Topic Renamed!")
+                            st.rerun()
+                with m_btn2:
+                    if st.button("🗑 Delete Micro-Topic", type="primary"):
+                        saved_micros[edit_chap_m].remove(micro_to_edit)
+                        save_micros(saved_micros)
+                        st.warning("Micro-Topic removed.")
+                        st.rerun()
